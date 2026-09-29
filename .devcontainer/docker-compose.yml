@@ -7,3 +7,7 @@ services:
     volumes:
       - ../..:/workspaces:cached
     command: sleep infinity
+
+  mongo:
+    image: mongo:latest
+    
