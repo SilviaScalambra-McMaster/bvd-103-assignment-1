@@ -10,4 +10,3 @@ services:
 
   mongo:
     image: mongo:latest
-    
