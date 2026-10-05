@@ -1,91 +1,120 @@
-import Router from '@koa/router';
-import { getBooksCollection } from './database';
+import Router from "@koa/router";
+import { getBooksCollection } from "./database";
 
 const listRouter = new Router();
 
-listRouter.get('/books', async (ctx) => {
-    try {
-        const filters = ctx.query.filters as
-            | Array<{ from?: string; to?: string }>
-            | undefined;
+interface Filter {
+  from?: string;
+  to?: string;
+  name?: string;
+  author?: string;
+}
 
-        if (filters && !Array.isArray(filters)) {
-            ctx.status = 400;
-            ctx.body = { error: 'Invalid filters.' };
-            return;
-        }
+listRouter.get("/books", async (ctx) => {
+  try {
+    const filters = ctx.query.filters as Filter[] | undefined;
 
-        const query: Record<string, unknown> = {};
-
-        if (filters && filters.length > 0) {
-            const priceConditions = [];
-
-            for (const filter of filters) {
-                const from =
-                    filter.from !== undefined
-                        ? Number(filter.from)
-                        : undefined;
-
-                const to =
-                    filter.to !== undefined
-                        ? Number(filter.to)
-                        : undefined;
-
-                if (
-                    (from !== undefined && !Number.isFinite(from)) ||
-                    (to !== undefined && !Number.isFinite(to)) ||
-                    (from !== undefined &&
-                        to !== undefined &&
-                        from > to)
-                ) {
-                    ctx.status = 400;
-                    ctx.body = {
-                        error:
-                            'Invalid filters. Each filter must have valid "from" and "to" numbers where from <= to.',
-                    };
-                    return;
-                }
-
-                const condition: Record<string, number> = {};
-
-                if (from !== undefined) {
-                    condition.$gte = from;
-                }
-
-                if (to !== undefined) {
-                    condition.$lte = to;
-                }
-
-                priceConditions.push({ price: condition });
-            }
-
-            if (priceConditions.length > 0) {
-                query.$or = priceConditions;
-            }
-        }
-
-        const collection = await getBooksCollection();
-
-        const books = await collection.find(query).toArray();
-
-        const result = books.map((book) => ({
-            id: book._id.toString(),
-            name: book.name,
-            author: book.author,
-            description: book.description,
-            price: book.price,
-            image: book.image,
-        }));
-
-        ctx.body = result;
-    } catch (error) {
-        console.error(error);
-
-        ctx.status = 500;
-        ctx.body = {
-            error: 'Failed to fetch books from MongoDB.',
-        };
+    if (filters !== undefined && !Array.isArray(filters)) {
+      ctx.status = 400;
+      ctx.body = {
+        error: "Invalid filters.",
+      };
+      return;
     }
+
+    const filterQueries: Record<string, unknown>[] = [];
+
+    for (const filter of filters ?? []) {
+      const query: Record<string, unknown> = {};
+
+      if (filter.from !== undefined || filter.to !== undefined) {
+        const price: Record<string, number> = {};
+
+        if (filter.from !== undefined) {
+          const from = Number(filter.from);
+
+          if (!Number.isFinite(from)) {
+            ctx.status = 400;
+            ctx.body = {
+              error: 'Invalid "from" price.',
+            };
+            return;
+          }
+
+          price.$gte = from;
+        }
+
+        if (filter.to !== undefined) {
+          const to = Number(filter.to);
+
+          if (!Number.isFinite(to)) {
+            ctx.status = 400;
+            ctx.body = {
+              error: 'Invalid "to" price.',
+            };
+            return;
+          }
+
+          price.$lte = to;
+        }
+
+        if (
+          price.$gte !== undefined &&
+          price.$lte !== undefined &&
+          price.$gte > price.$lte
+        ) {
+          ctx.status = 400;
+          ctx.body = {
+            error: '"from" must be less than or equal to "to".',
+          };
+          return;
+        }
+
+        query.price = price;
+      }
+
+      if (filter.name !== undefined) {
+        query.name = {
+          $regex: filter.name,
+          $options: "i",
+        };
+      }
+
+      if (filter.author !== undefined) {
+        query.author = {
+          $regex: filter.author,
+          $options: "i",
+        };
+      }
+
+      filterQueries.push(query);
+    }
+
+    const query: Record<string, unknown> =
+      filterQueries.length > 0 ? { $or: filterQueries } : {};
+
+    const collection = await getBooksCollection();
+
+    const books = await collection.find(query).toArray();
+
+    const result = books.map((book) => ({
+      id: book._id.toString(),
+      name: book.name,
+      author: book.author,
+      description: book.description,
+      price: book.price,
+      image: book.image,
+    }));
+
+    ctx.body = result;
+  } catch (error) {
+    console.error(error);
+
+    ctx.status = 500;
+    ctx.body = {
+      error: "Failed to fetch books from MongoDB.",
+    };
+  }
 });
 
 export default listRouter;
