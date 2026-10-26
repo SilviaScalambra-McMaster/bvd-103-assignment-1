@@ -184,5 +184,38 @@ router.delete("/books/:id", async (ctx) => {
     };
   }
 });
+// Look up a book by ID
+router.get("/books/:id", async (ctx) => {
+  try {
+    const id = ctx.params.id;
 
+    if (!ObjectId.isValid(id)) {
+      ctx.status = 400;
+      ctx.body = { error: "Invalid book ID." };
+      return;
+    }
+
+    const collection = await getBooksCollection();
+    const book = await collection.findOne({ _id: new ObjectId(id) });
+
+    if (!book) {
+      ctx.status = 404;
+      ctx.body = { error: "Book not found." };
+      return;
+    }
+
+    ctx.body = {
+      id: book._id.toString(),
+      name: book.name,
+      author: book.author,
+      description: book.description,
+      price: book.price,
+      image: book.image,
+    };
+  } catch (error) {
+    console.error(error);
+    ctx.status = 500;
+    ctx.body = { error: "Failed to fetch book." };
+  }
+});
 export default router;
